@@ -67,18 +67,19 @@ class EscPosPrinter(Printer):
                 logger.debug("Failed to close printer after communication error", exc_info=True)
 
     def _execute(self, operation: Callable[[Any], None]) -> None:
-        was_connected = self._device is not None
-        device = self._connect()
-        try:
-            operation(device)
-        except (PrinterUnavailableError, PrinterConfigurationError):
-            raise
-        except Exception as exc:
-            self._disconnect_after_failure()
-            logger.error("ESC/POS communication failed", exc_info=True)
-            if was_connected:
+        for attempt in range(2):
+            try:
+                operation(self._connect())
+                return
+            except (PrinterUnavailableError, PrinterConfigurationError):
+                raise
+            except Exception as exc:
+                self._disconnect_after_failure()
+                if attempt == 0:
+                    logger.warning("ESC/POS communication failed; reconnecting", exc_info=True)
+                    continue
+                logger.error("ESC/POS communication failed after reconnect", exc_info=True)
                 raise PrinterCommunicationError("Printer communication failed") from exc
-            raise PrinterUnavailableError("Configured USB printer is unavailable") from exc
 
     def print_text(
         self,
