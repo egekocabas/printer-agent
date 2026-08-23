@@ -27,6 +27,7 @@ from printer_agent.image import (
     prepare_for_thermal_print,
     simulate_thermal_output,
 )
+from printer_agent.metrics import PrinterMetrics
 from printer_agent.printer.base import Printer, PrinterStatus
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class PrintingService:
     def __init__(self, printer: Printer, settings: Settings) -> None:
         self.printer = printer
         self.settings = settings
+        self.metrics = PrinterMetrics()
         self._print_lock = asyncio.Lock()
 
     def _validate_text(self, value: str, *, name: str = "text") -> None:
@@ -70,21 +72,44 @@ class PrintingService:
             if resolved_final_feed_lines:
                 self.printer.feed(resolved_final_feed_lines)
 
-        async with self._print_lock:
+        self.metrics.queue_depth.inc()
+        try:
+            await self._print_lock.acquire()
+        finally:
+            self.metrics.queue_depth.dec()
+
+        self.metrics.queue_wait.labels(request_type=request_type).observe(
+            time.monotonic() - started
+        )
+        self.metrics.in_progress.set(1)
+        try:
             try:
                 logger.info("Printing started", extra={"request_type": request_type})
                 await to_thread.run_sync(job_with_final_feed)
             except Exception:
+                self.metrics.jobs.labels(request_type=request_type, outcome="error").inc()
                 logger.error(
                     "Printing failed",
                     extra={"request_type": request_type},
                     exc_info=True,
                 )
                 raise
-        logger.info(
-            "Printing completed",
-            extra={"request_type": request_type, "duration_seconds": time.monotonic() - started},
-        )
+            else:
+                self.metrics.jobs.labels(request_type=request_type, outcome="success").inc()
+                self.metrics.last_success.set_to_current_time()
+                logger.info(
+                    "Printing completed",
+                    extra={
+                        "request_type": request_type,
+                        "duration_seconds": time.monotonic() - started,
+                    },
+                )
+        finally:
+            self.metrics.duration.labels(request_type=request_type).observe(
+                time.monotonic() - started
+            )
+            self.metrics.in_progress.set(0)
+            self._print_lock.release()
 
     async def prepare_image(self, data: bytes, *, caption: str | None = None) -> Image:
         def prepare() -> Image:

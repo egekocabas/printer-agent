@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.responses import Response
 
 from printer_agent.api.routes import router
 from printer_agent.config import Settings
@@ -54,6 +56,15 @@ def create_app(*, settings: Settings | None = None, printer: Printer | None = No
         lifespan=lifespan,
     )
     application.include_router(router)
+
+    @application.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        """Expose application metrics for an internal Prometheus scraper."""
+
+        return Response(
+            content=generate_latest(service.metrics.registry),
+            headers={"Content-Type": CONTENT_TYPE_LATEST},
+        )
 
     @application.exception_handler(ImageTooLargeError)
     async def image_too_large_handler(_request: Request, exc: ImageTooLargeError) -> JSONResponse:

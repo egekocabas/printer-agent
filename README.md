@@ -102,6 +102,7 @@ The interactive OpenAPI UI is at <http://127.0.0.1:8000/docs>.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Application health; remains healthy if the printer is absent |
+| `GET` | `/metrics` | Prometheus metrics for print outcomes, latency, and queue state |
 | `GET` | `/printer/status` | Backend configuration, current reachability, and known status |
 | `POST` | `/print/text` | Print styled plain text |
 | `POST` | `/print/qr` | Print a QR code and optional label |
@@ -144,6 +145,20 @@ curl http://127.0.0.1:8000/printer/status
 ```
 
 `hardware_status` is `null` when the printer cannot provide a reliable generic ESC/POS status.
+
+### `GET /metrics`
+
+Expose Prometheus metrics for an internal scraper:
+
+```bash
+curl http://127.0.0.1:8000/metrics
+```
+
+The metrics cover completed print jobs by type and outcome, total job duration, queue wait time,
+current queue depth, whether a job is in progress, and the timestamp of the last successful print.
+The endpoint deliberately uses only bounded labels and is omitted from the public OpenAPI schema.
+Keep it reachable only from the monitoring network. Run a single Uvicorn worker because printer
+serialization and metrics are process-local.
 
 ### `POST /print/text`
 
