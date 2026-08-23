@@ -24,3 +24,21 @@ def test_aspect_ratio_width_and_no_upscaling(
 def test_custom_printer_width_is_respected_without_cropping() -> None:
     prepared = prepare_for_thermal_print(Image.new("RGB", (1000, 333)), printable_width=576)
     assert prepared.size == (576, 192)
+
+
+def test_higher_brightness_reduces_black_dot_density() -> None:
+    source = Image.new("L", (128, 128), 96)
+    baseline = prepare_for_thermal_print(
+        source,
+        printable_width=384,
+        brightness=1.0,
+        contrast=1.0,
+    )
+    lightened = prepare_for_thermal_print(
+        source,
+        printable_width=384,
+        brightness=1.5,
+        contrast=1.0,
+    )
+
+    assert lightened.histogram()[0] < baseline.histogram()[0]

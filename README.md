@@ -75,6 +75,8 @@ PRINTER_IN_ENDPOINT=0x82
 PRINTER_OUT_ENDPOINT=0x01
 PRINTER_DOTS_WIDTH=384
 PRINTER_MODEL_NAME=ANJET58
+PRINTER_IMAGE_BRIGHTNESS=1.25
+PRINTER_IMAGE_CONTRAST=1.05
 PRINTER_FINAL_FEED_LINES=3
 PRINTER_IMAGE_FINAL_FEED_LINES=
 ```
@@ -178,12 +180,34 @@ curl -X POST http://127.0.0.1:8000/print/qr \
 ### `POST /print/image`
 
 Upload the original image using multipart form data. The service detects the format from its
-contents rather than trusting its filename or MIME header.
+contents rather than trusting its filename or MIME header. Optional `date` and `time` fields print
+a centered caption below the image.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/print/image \
   -F 'image=@IMG_1234.HEIC'
 ```
+
+Print an image with a date:
+
+```bash
+curl -X POST http://127.0.0.1:8000/print/image \
+  -F 'image=@IMG_1234.HEIC' \
+  -F 'date=27/02/2026'
+```
+
+Print an image with a date and 24-hour time:
+
+```bash
+curl -X POST http://127.0.0.1:8000/print/image \
+  -F 'image=@IMG_1234.HEIC' \
+  -F 'date=27/02/2026' \
+  -F 'time=18:34'
+```
+
+`date` must be a real date in `DD/MM/YYYY` format. `time` is optional, requires `date`, and must be
+a real time in 24-hour `HH:MM` format. The image and caption are separated by
+`PRINTER_IMAGE_CAPTION_GAP_LINES` blank lines.
 
 ```json
 {
@@ -283,6 +307,9 @@ Configuration is read centrally from environment variables:
 | `PRINTER_PROFILE` | unset | Optional python-escpos printer profile |
 | `PRINTER_DOTS_WIDTH` | `384` | Maximum output raster width |
 | `PRINTER_MODEL_NAME` | `ANJET58` | Informational model name |
+| `PRINTER_IMAGE_BRIGHTNESS` | `1.25` | Brightness multiplier; increase for lighter image prints |
+| `PRINTER_IMAGE_CONTRAST` | `1.05` | Contrast multiplier applied before dithering |
+| `PRINTER_IMAGE_CAPTION_GAP_LINES` | `1` | Blank lines between an image and its optional date/time caption; `0` disables the gap |
 | `PRINTER_FINAL_FEED_LINES` | `3` | Blank lines added after every complete print job; `0` disables it |
 | `PRINTER_IMAGE_FINAL_FEED_LINES` | unset | Final lines for image jobs; falls back to `PRINTER_FINAL_FEED_LINES` |
 | `MAX_IMAGE_UPLOAD_BYTES` | `26214400` | Per-image encoded upload limit (25 MiB) |

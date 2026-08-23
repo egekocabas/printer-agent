@@ -9,6 +9,7 @@ from anyio import to_thread
 from PIL.Image import Image
 
 from printer_agent.api.models import (
+    Align,
     FeedItem,
     FeedRequest,
     ImageItem,
@@ -86,6 +87,8 @@ class PrintingService:
             return prepare_for_thermal_print(
                 decoded.image,
                 printable_width=self.settings.printer_dots_width,
+                brightness=self.settings.printer_image_brightness,
+                contrast=self.settings.printer_image_contrast,
             )
 
         return await to_thread.run_sync(prepare)
@@ -114,10 +117,18 @@ class PrintingService:
 
         await self._run_serialized(job, request_type="qr")
 
-    async def print_image(self, data: bytes) -> None:
+    async def print_image(self, data: bytes, *, caption: str | None = None) -> None:
         image = await self._prepare_image(data)
+
+        def job() -> None:
+            self.printer.print_image(image)
+            if caption is not None:
+                if self.settings.printer_image_caption_gap_lines:
+                    self.printer.feed(self.settings.printer_image_caption_gap_lines)
+                self.printer.print_text(caption, align=Align.CENTER)
+
         await self._run_serialized(
-            lambda: self.printer.print_image(image),
+            job,
             request_type="image",
             final_feed_lines=self.settings.printer_image_final_feed_lines,
         )

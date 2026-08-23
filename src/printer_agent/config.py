@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     printer_model_name: str | None = "ANJET58"
     printer_final_feed_lines: int = Field(default=3, ge=0, le=20)
     printer_image_final_feed_lines: OptionalEnvironmentInt = Field(default=None, ge=0, le=20)
+    printer_image_caption_gap_lines: int = Field(default=1, ge=0, le=20)
+    printer_image_brightness: float = Field(default=1.25, ge=0.1, le=3.0)
+    printer_image_contrast: float = Field(default=1.05, ge=0.1, le=3.0)
 
     max_image_upload_bytes: int = Field(default=25 * 1024 * 1024, ge=1024)
     max_image_pixels: int = Field(default=50_000_000, ge=1_000_000)

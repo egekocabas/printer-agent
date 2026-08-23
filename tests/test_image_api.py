@@ -24,6 +24,86 @@ def test_image_upload_uses_decoded_content_not_filename_or_mime(
     assert operation.options == {"size": (384, 192), "mode": "1"}
 
 
+def test_image_upload_prints_optional_date_and_time_caption(
+    client: TestClient, mock_printer: MockPrinter
+) -> None:
+    response = client.post(
+        "/print/image",
+        data={"date": "27/02/2026", "time": "18:34"},
+        files={"image": ("photo.jpg", image_bytes("JPEG"), "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert [operation.kind for operation in mock_printer.operations] == [
+        "image",
+        "feed",
+        "text",
+        "feed",
+    ]
+    assert mock_printer.operations[1].value == 1
+    caption = mock_printer.operations[2]
+    assert caption.value == "27/02/2026 18:34"
+    assert caption.options["align"] == "center"
+
+
+def test_image_upload_prints_date_without_time(
+    client: TestClient, mock_printer: MockPrinter
+) -> None:
+    response = client.post(
+        "/print/image",
+        data={"date": "27/02/2026"},
+        files={"image": ("photo.jpg", image_bytes("JPEG"), "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert mock_printer.operations[1].kind == "feed"
+    assert mock_printer.operations[1].value == 1
+    assert mock_printer.operations[2].value == "27/02/2026"
+
+
+def test_image_caption_gap_can_be_configured() -> None:
+    settings = Settings(printer_image_caption_gap_lines=3, _env_file=None)
+    printer = MockPrinter()
+    with TestClient(create_app(settings=settings, printer=printer)) as client:
+        response = client.post(
+            "/print/image",
+            data={"date": "27/02/2026"},
+            files={"image": ("photo.jpg", image_bytes("JPEG"), "image/jpeg")},
+        )
+
+    assert response.status_code == 200
+    assert [operation.kind for operation in printer.operations] == [
+        "image",
+        "feed",
+        "text",
+        "feed",
+    ]
+    assert printer.operations[1].value == 3
+
+
+def test_image_caption_rejects_invalid_date_or_time(client: TestClient) -> None:
+    image = image_bytes("JPEG")
+    invalid_date = client.post(
+        "/print/image",
+        data={"date": "31/02/2026"},
+        files={"image": ("photo.jpg", image, "image/jpeg")},
+    )
+    time_without_date = client.post(
+        "/print/image",
+        data={"time": "18:34"},
+        files={"image": ("photo.jpg", image, "image/jpeg")},
+    )
+    invalid_time = client.post(
+        "/print/image",
+        data={"date": "27/02/2026", "time": "25:00"},
+        files={"image": ("photo.jpg", image, "image/jpeg")},
+    )
+
+    assert invalid_date.status_code == 400
+    assert time_without_date.status_code == 400
+    assert invalid_time.status_code == 400
+
+
 def test_malformed_and_unsupported_uploads(client: TestClient) -> None:
     malformed = client.post("/print/image", files={"image": ("photo.jpg", b"broken", "image/jpeg")})
     assert malformed.status_code == 400

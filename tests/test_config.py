@@ -37,6 +37,20 @@ def test_final_feed_defaults_to_three_lines_and_can_be_disabled() -> None:
     )
 
 
+def test_image_tone_defaults_lighten_before_dithering() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.printer_image_brightness == 1.25
+    assert settings.printer_image_contrast == 1.05
+
+
+def test_image_caption_gap_defaults_to_one_line_and_can_be_disabled() -> None:
+    assert Settings(_env_file=None).printer_image_caption_gap_lines == 1
+    assert (
+        Settings(printer_image_caption_gap_lines=0, _env_file=None).printer_image_caption_gap_lines
+        == 0
+    )
+
+
 def test_settings_load_dotenv_automatically(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

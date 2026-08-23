@@ -7,7 +7,13 @@ from PIL import Image, ImageEnhance, ImageOps
 logger = logging.getLogger(__name__)
 
 
-def prepare_for_thermal_print(image: Image.Image, *, printable_width: int) -> Image.Image:
+def prepare_for_thermal_print(
+    image: Image.Image,
+    *,
+    printable_width: int,
+    brightness: float = 1.25,
+    contrast: float = 1.05,
+) -> Image.Image:
     """Resize without cropping or upscaling, then contrast and dither to one bit."""
 
     working = image
@@ -16,7 +22,8 @@ def prepare_for_thermal_print(image: Image.Image, *, printable_width: int) -> Im
         working = working.resize((printable_width, output_height), Image.Resampling.LANCZOS)
 
     grayscale = ImageOps.grayscale(working)
-    contrasted = ImageEnhance.Contrast(grayscale).enhance(1.15)
+    brightened = ImageEnhance.Brightness(grayscale).enhance(brightness)
+    contrasted = ImageEnhance.Contrast(brightened).enhance(contrast)
     thermal = contrasted.convert("1", dither=Image.Dither.FLOYDSTEINBERG)
     logger.info(
         "Image prepared for thermal printing",

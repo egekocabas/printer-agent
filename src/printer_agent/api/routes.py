@@ -2,9 +2,10 @@
 
 import json
 from dataclasses import asdict
+from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -24,6 +25,32 @@ from printer_agent.service.printing import PrintingService
 router = APIRouter()
 
 ServiceDependency = Annotated[PrintingService, Depends(get_printing_service)]
+
+
+def _format_image_caption(date_value: str | None, time_value: str | None) -> str | None:
+    if time_value is not None and date_value is None:
+        raise InvalidPrintDocumentError("Image time requires an image date")
+    if date_value is None:
+        return None
+
+    try:
+        parsed_date = datetime.strptime(date_value, "%d/%m/%Y")
+    except ValueError as exc:
+        raise InvalidPrintDocumentError(
+            "Image date must be a real date in DD/MM/YYYY format"
+        ) from exc
+    if parsed_date.strftime("%d/%m/%Y") != date_value:
+        raise InvalidPrintDocumentError("Image date must use DD/MM/YYYY format")
+
+    if time_value is None:
+        return date_value
+    try:
+        parsed_time = datetime.strptime(time_value, "%H:%M")
+    except ValueError as exc:
+        raise InvalidPrintDocumentError("Image time must be a real time in HH:MM format") from exc
+    if parsed_time.strftime("%H:%M") != time_value:
+        raise InvalidPrintDocumentError("Image time must use 24-hour HH:MM format")
+    return f"{date_value} {time_value}"
 
 
 async def _read_limited_upload(upload: StarletteUploadFile, limit: int) -> bytes:
@@ -80,9 +107,18 @@ async def print_image(
         File(description="JPEG, PNG, WebP, HEIC/HEIF, or AVIF image bytes."),
     ],
     service: ServiceDependency,
+    date: Annotated[
+        str | None,
+        Form(description="Optional image date in DD/MM/YYYY format."),
+    ] = None,
+    time: Annotated[
+        str | None,
+        Form(description="Optional 24-hour image time in HH:MM format; requires date."),
+    ] = None,
 ) -> PrintResponse:
     data = await _read_limited_upload(image, service.settings.max_image_upload_bytes)
-    await service.print_image(data)
+    caption = _format_image_caption(date, time)
+    await service.print_image(data, caption=caption)
     return PrintResponse()
 
 
