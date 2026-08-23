@@ -367,7 +367,7 @@ uvicorn printer_agent.main:app
 
 Replace the placeholder IDs with values measured from the actual device. No ANJET58 vendor or
 product ID is fabricated here. The USB backend keeps a successful connection open, drops it after
-a communication error, and attempts a clean reconnect on the next operation. Detailed printer
+a communication error, and retries the operation once with a clean connection. Detailed printer
 paper/error status is returned as `null` because generic ESC/POS status queries are not reliably
 supported across devices.
 
