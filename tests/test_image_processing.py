@@ -1,7 +1,7 @@
 import pytest
 from PIL import Image
 
-from printer_agent.image.processing import prepare_for_thermal_print
+from printer_agent.image.processing import prepare_for_thermal_print, simulate_thermal_output
 
 
 @pytest.mark.parametrize(
@@ -42,3 +42,23 @@ def test_higher_brightness_reduces_black_dot_density() -> None:
     )
 
     assert lightened.histogram()[0] < baseline.histogram()[0]
+
+
+def test_preview_smoothing_blends_dots_without_changing_dimensions() -> None:
+    source = Image.new("1", (9, 9), 1)
+    source.putpixel((4, 4), 0)
+
+    preview = simulate_thermal_output(source, smoothing_radius=0.65)
+
+    assert preview.mode == "L"
+    assert preview.size == source.size
+    assert any(value not in {0, 255} for value in preview.get_flattened_data())
+
+
+def test_zero_preview_smoothing_preserves_raw_dot_values() -> None:
+    source = Image.new("1", (3, 1), 1)
+    source.putpixel((1, 0), 0)
+
+    preview = simulate_thermal_output(source, smoothing_radius=0)
+
+    assert list(preview.get_flattened_data()) == [255, 0, 255]

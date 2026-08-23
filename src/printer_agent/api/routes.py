@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -120,6 +120,37 @@ async def print_image(
     caption = _format_image_caption(date, time)
     await service.print_image(data, caption=caption)
     return PrintResponse()
+
+
+@router.post(
+    "/preview/image",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}, "description": "Thermal print preview PNG"}},
+    tags=["preview"],
+)
+async def preview_image(
+    image: Annotated[
+        UploadFile,
+        File(description="JPEG, PNG, WebP, HEIC/HEIF, or AVIF image bytes."),
+    ],
+    service: ServiceDependency,
+    date: Annotated[
+        str | None,
+        Form(description="Optional image date in DD/MM/YYYY format."),
+    ] = None,
+    time: Annotated[
+        str | None,
+        Form(description="Optional 24-hour image time in HH:MM format; requires date."),
+    ] = None,
+) -> Response:
+    data = await _read_limited_upload(image, service.settings.max_image_upload_bytes)
+    caption = _format_image_caption(date, time)
+    png = await service.preview_image(data, caption=caption)
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Content-Disposition": 'inline; filename="printer-preview.png"'},
+    )
 
 
 @router.post("/print/feed", response_model=PrintResponse, tags=["printing"])

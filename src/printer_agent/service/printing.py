@@ -1,6 +1,7 @@
 """Serialized execution of complete print jobs."""
 
 import asyncio
+import io
 import logging
 import time
 from collections.abc import Callable
@@ -9,7 +10,6 @@ from anyio import to_thread
 from PIL.Image import Image
 
 from printer_agent.api.models import (
-    Align,
     FeedItem,
     FeedRequest,
     ImageItem,
@@ -21,7 +21,12 @@ from printer_agent.api.models import (
 )
 from printer_agent.config import Settings
 from printer_agent.exceptions import InvalidPrintDocumentError
-from printer_agent.image import decode_image, prepare_for_thermal_print
+from printer_agent.image import (
+    add_caption,
+    decode_image,
+    prepare_for_thermal_print,
+    simulate_thermal_output,
+)
 from printer_agent.printer.base import Printer, PrinterStatus
 
 logger = logging.getLogger(__name__)
@@ -81,17 +86,37 @@ class PrintingService:
             extra={"request_type": request_type, "duration_seconds": time.monotonic() - started},
         )
 
-    async def _prepare_image(self, data: bytes) -> Image:
+    async def prepare_image(self, data: bytes, *, caption: str | None = None) -> Image:
         def prepare() -> Image:
             decoded = decode_image(data, max_pixels=self.settings.max_image_pixels)
-            return prepare_for_thermal_print(
+            image = prepare_for_thermal_print(
                 decoded.image,
                 printable_width=self.settings.printer_dots_width,
                 brightness=self.settings.printer_image_brightness,
                 contrast=self.settings.printer_image_contrast,
             )
+            return add_caption(
+                image,
+                caption,
+                printable_width=self.settings.printer_dots_width,
+                gap_lines=self.settings.printer_image_caption_gap_lines,
+            )
 
         return await to_thread.run_sync(prepare)
+
+    async def preview_image(self, data: bytes, *, caption: str | None = None) -> bytes:
+        image = await self.prepare_image(data, caption=caption)
+
+        def encode_png() -> bytes:
+            preview = simulate_thermal_output(
+                image,
+                smoothing_radius=self.settings.printer_preview_smoothing_radius,
+            )
+            output = io.BytesIO()
+            preview.save(output, format="PNG")
+            return output.getvalue()
+
+        return await to_thread.run_sync(encode_png)
 
     async def print_text(self, request: TextRequest) -> None:
         self._validate_text(request.text)
@@ -118,17 +143,10 @@ class PrintingService:
         await self._run_serialized(job, request_type="qr")
 
     async def print_image(self, data: bytes, *, caption: str | None = None) -> None:
-        image = await self._prepare_image(data)
-
-        def job() -> None:
-            self.printer.print_image(image)
-            if caption is not None:
-                if self.settings.printer_image_caption_gap_lines:
-                    self.printer.feed(self.settings.printer_image_caption_gap_lines)
-                self.printer.print_text(caption, align=Align.CENTER)
+        image = await self.prepare_image(data, caption=caption)
 
         await self._run_serialized(
-            job,
+            lambda: self.printer.print_image(image),
             request_type="image",
             final_feed_lines=self.settings.printer_image_final_feed_lines,
         )
@@ -160,7 +178,7 @@ class PrintingService:
             )
 
         for file_name in referenced_files:
-            prepared_images[file_name] = await self._prepare_image(images[file_name])
+            prepared_images[file_name] = await self.prepare_image(images[file_name])
 
         for item in document.items:
             if isinstance(item, TextItem):

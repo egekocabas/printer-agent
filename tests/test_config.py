@@ -51,6 +51,16 @@ def test_image_caption_gap_defaults_to_one_line_and_can_be_disabled() -> None:
     )
 
 
+def test_preview_smoothing_defaults_to_point_six_five_and_can_be_disabled() -> None:
+    assert Settings(_env_file=None).printer_preview_smoothing_radius == 0.65
+    assert (
+        Settings(
+            printer_preview_smoothing_radius=0, _env_file=None
+        ).printer_preview_smoothing_radius
+        == 0
+    )
+
+
 def test_settings_load_dotenv_automatically(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -106,6 +106,7 @@ The interactive OpenAPI UI is at <http://127.0.0.1:8000/docs>.
 | `POST` | `/print/text` | Print styled plain text |
 | `POST` | `/print/qr` | Print a QR code and optional label |
 | `POST` | `/print/image` | Upload and print one image as `multipart/form-data` |
+| `POST` | `/preview/image` | Return a screen-friendly simulation of the transformed print raster |
 | `POST` | `/print/feed` | Advance the paper by an exact number of blank lines |
 | `POST` | `/print` | Print one atomic structured document |
 
@@ -215,6 +216,26 @@ a real time in 24-hour `HH:MM` format. The image and caption are separated by
 }
 ```
 
+### `POST /preview/image`
+
+Preview an image without sending anything to the printer. It accepts the same `image`, `date`, and
+`time` multipart fields as `/print/image`. The service first produces the exact monochrome print
+raster, including the optional caption and configured gap, and then applies preview-only smoothing
+to simulate how neighboring thermal dots visually blend on paper. This smoothing never changes the
+data sent to the printer. Final tear-off feed lines are not shown because they only move paper.
+
+```bash
+curl -X POST http://127.0.0.1:8000/preview/image \
+  -F 'image=@IMG_1234.HEIC' \
+  -F 'date=27/02/2026' \
+  -F 'time=18:34' \
+  --output printer-preview.png
+```
+
+Set `PRINTER_PREVIEW_SMOOTHING_RADIUS=0` to return the unsmoothed raw dot raster. Increase it slightly
+if the preview still looks more dotted than the paper output; values around `0.5`–`1.0` are the
+intended range.
+
 ### `POST /print/feed`
 
 Advance the paper without printing content. This endpoint feeds exactly the requested number of
@@ -309,7 +330,8 @@ Configuration is read centrally from environment variables:
 | `PRINTER_MODEL_NAME` | `ANJET58` | Informational model name |
 | `PRINTER_IMAGE_BRIGHTNESS` | `1.25` | Brightness multiplier; increase for lighter image prints |
 | `PRINTER_IMAGE_CONTRAST` | `1.05` | Contrast multiplier applied before dithering |
-| `PRINTER_IMAGE_CAPTION_GAP_LINES` | `1` | Blank lines between an image and its optional date/time caption; `0` disables the gap |
+| `PRINTER_PREVIEW_SMOOTHING_RADIUS` | `0.65` | Preview-only thermal dot blending; `0` shows raw printer dots |
+| `PRINTER_IMAGE_CAPTION_GAP_LINES` | `1` | 24-dot blank lines between an image and its optional date/time caption; `0` disables the gap |
 | `PRINTER_FINAL_FEED_LINES` | `3` | Blank lines added after every complete print job; `0` disables it |
 | `PRINTER_IMAGE_FINAL_FEED_LINES` | unset | Final lines for image jobs; falls back to `PRINTER_FINAL_FEED_LINES` |
 | `MAX_IMAGE_UPLOAD_BYTES` | `26214400` | Per-image encoded upload limit (25 MiB) |

@@ -34,16 +34,10 @@ def test_image_upload_prints_optional_date_and_time_caption(
     )
 
     assert response.status_code == 200
-    assert [operation.kind for operation in mock_printer.operations] == [
-        "image",
-        "feed",
-        "text",
-        "feed",
-    ]
-    assert mock_printer.operations[1].value == 1
-    caption = mock_printer.operations[2]
-    assert caption.value == "27/02/2026 18:34"
-    assert caption.options["align"] == "center"
+    assert [operation.kind for operation in mock_printer.operations] == ["image", "feed"]
+    printed_image = mock_printer.operations[0].value
+    assert printed_image.width == 384
+    assert printed_image.height > 24
 
 
 def test_image_upload_prints_date_without_time(
@@ -56,29 +50,91 @@ def test_image_upload_prints_date_without_time(
     )
 
     assert response.status_code == 200
-    assert mock_printer.operations[1].kind == "feed"
-    assert mock_printer.operations[1].value == 1
-    assert mock_printer.operations[2].value == "27/02/2026"
+    assert [operation.kind for operation in mock_printer.operations] == ["image", "feed"]
+    assert mock_printer.operations[0].value.height > 24
 
 
 def test_image_caption_gap_can_be_configured() -> None:
-    settings = Settings(printer_image_caption_gap_lines=3, _env_file=None)
-    printer = MockPrinter()
-    with TestClient(create_app(settings=settings, printer=printer)) as client:
-        response = client.post(
+    image = image_bytes("JPEG")
+    no_gap_settings = Settings(printer_image_caption_gap_lines=0, _env_file=None)
+    three_line_settings = Settings(printer_image_caption_gap_lines=3, _env_file=None)
+    with TestClient(create_app(settings=no_gap_settings, printer=MockPrinter())) as client:
+        no_gap = client.post(
             "/print/image",
             data={"date": "27/02/2026"},
-            files={"image": ("photo.jpg", image_bytes("JPEG"), "image/jpeg")},
+            files={"image": ("photo.jpg", image, "image/jpeg")},
         )
+    no_gap_printer = client.app.state.printing_service.printer
+    with TestClient(create_app(settings=three_line_settings, printer=MockPrinter())) as client:
+        three_lines = client.post(
+            "/print/image",
+            data={"date": "27/02/2026"},
+            files={"image": ("photo.jpg", image, "image/jpeg")},
+        )
+    three_line_printer = client.app.state.printing_service.printer
 
-    assert response.status_code == 200
-    assert [operation.kind for operation in printer.operations] == [
-        "image",
-        "feed",
-        "text",
-        "feed",
-    ]
-    assert printer.operations[1].value == 3
+    assert no_gap.status_code == 200
+    assert three_lines.status_code == 200
+    assert isinstance(no_gap_printer, MockPrinter)
+    assert isinstance(three_line_printer, MockPrinter)
+    no_gap_height = no_gap_printer.operations[0].value.height
+    three_line_height = three_line_printer.operations[0].value.height
+    assert three_line_height - no_gap_height == 3 * 24
+
+
+def test_image_preview_smooths_the_exact_raster_without_printing(
+    client: TestClient, mock_printer: MockPrinter
+) -> None:
+    image = image_bytes("JPEG", size=(240, 100))
+    form = {"date": "27/02/2026", "time": "18:34"}
+    upload = {"image": ("photo.jpg", image, "image/jpeg")}
+
+    preview_response = client.post("/preview/image", data=form, files=upload)
+
+    assert preview_response.status_code == 200
+    assert preview_response.headers["content-type"] == "image/png"
+    assert preview_response.headers["content-disposition"] == (
+        'inline; filename="printer-preview.png"'
+    )
+    assert mock_printer.operations == []
+    preview = Image.open(io.BytesIO(preview_response.content)).copy()
+
+    print_response = client.post("/print/image", data=form, files=upload)
+
+    assert print_response.status_code == 200
+    printed = mock_printer.operations[0].value
+    assert preview.mode == "L"
+    assert printed.mode == "1"
+    assert preview.size == printed.size
+    assert preview.tobytes() != printed.convert("L").tobytes()
+    assert any(value not in {0, 255} for value in preview.get_flattened_data())
+
+
+def test_image_preview_can_return_unsmoothed_raw_raster() -> None:
+    settings = Settings(printer_preview_smoothing_radius=0, _env_file=None)
+    printer = MockPrinter()
+    image = image_bytes("JPEG", size=(240, 100))
+    upload = {"image": ("photo.jpg", image, "image/jpeg")}
+    with TestClient(create_app(settings=settings, printer=printer)) as client:
+        preview_response = client.post("/preview/image", files=upload)
+        print_response = client.post("/print/image", files=upload)
+
+    assert preview_response.status_code == 200
+    assert print_response.status_code == 200
+    preview = Image.open(io.BytesIO(preview_response.content)).convert("L")
+    printed = printer.operations[0].value.convert("L")
+    assert preview.size == printed.size
+    assert preview.tobytes() == printed.tobytes()
+
+
+def test_image_preview_uses_same_caption_validation(client: TestClient) -> None:
+    response = client.post(
+        "/preview/image",
+        data={"time": "18:34"},
+        files={"image": ("photo.jpg", image_bytes("JPEG"), "image/jpeg")},
+    )
+
+    assert response.status_code == 400
 
 
 def test_image_caption_rejects_invalid_date_or_time(client: TestClient) -> None:
