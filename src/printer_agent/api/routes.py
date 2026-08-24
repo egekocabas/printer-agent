@@ -1,17 +1,20 @@
 """FastAPI routes with transport-only responsibilities."""
 
+import base64
 import json
 from dataclasses import asdict
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile, status
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from printer_agent.api.models import (
     FeedRequest,
     HealthResponse,
+    ImagePreviewResponse,
     PrintDocument,
     PrinterStatusResponse,
     PrintResponse,
@@ -124,8 +127,9 @@ async def print_image(
 
 @router.post(
     "/preview/image",
-    response_class=Response,
-    responses={200: {"content": {"image/png": {}}, "description": "Thermal print preview PNG"}},
+    response_class=JSONResponse,
+    response_model=ImagePreviewResponse,
+    responses={200: {"content": {"image/png": {}}, "description": "Thermal print preview"}},
     tags=["preview"],
 )
 async def preview_image(
@@ -142,12 +146,25 @@ async def preview_image(
         str | None,
         Form(description="Optional 24-hour image time in HH:MM format; requires date."),
     ] = None,
+    response_format: Annotated[
+        Literal["image", "json"],
+        Query(
+            alias="response",
+            description="Return the enhanced PNG directly or both PNGs as Base64 JSON.",
+        ),
+    ] = "image",
 ) -> Response:
     data = await _read_limited_upload(image, service.settings.max_image_upload_bytes)
     caption = _format_image_caption(date, time)
-    png = await service.preview_image(data, caption=caption)
+    exact_png, enhanced_png = await service.preview_images(data, caption=caption)
+    if response_format == "json":
+        result = ImagePreviewResponse(
+            exact_print_image=base64.b64encode(exact_png).decode("ascii"),
+            enhanced_preview_image=base64.b64encode(enhanced_png).decode("ascii"),
+        )
+        return JSONResponse(content=result.model_dump())
     return Response(
-        content=png,
+        content=enhanced_png,
         media_type="image/png",
         headers={"Content-Disposition": 'inline; filename="printer-preview.png"'},
     )

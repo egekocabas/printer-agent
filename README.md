@@ -107,7 +107,7 @@ The interactive OpenAPI UI is at <http://127.0.0.1:8000/docs>.
 | `POST` | `/print/text` | Print styled plain text |
 | `POST` | `/print/qr` | Print a QR code and optional label |
 | `POST` | `/print/image` | Upload and print one image as `multipart/form-data` |
-| `POST` | `/preview/image` | Return a screen-friendly simulation of the transformed print raster |
+| `POST` | `/preview/image` | Preview the exact print image and its screen-friendly enhancement |
 | `POST` | `/print/feed` | Advance the paper by an exact number of blank lines |
 | `POST` | `/print` | Print one atomic structured document |
 
@@ -238,6 +238,17 @@ Preview an image without sending anything to the printer. It accepts the same `i
 raster, including the optional caption and configured gap, and then applies preview-only smoothing
 to simulate how neighboring thermal dots visually blend on paper. This smoothing never changes the
 data sent to the printer. Final tear-off feed lines are not shown because they only move paper.
+
+By default, the endpoint returns the enhanced preview as an `image/png`, preserving its original
+behavior. Add `?response=json` to receive both the exact print image and enhanced preview as plain
+Base64-encoded PNG strings:
+
+```json
+{
+  "exact_print_image": "iVBORw0KGgo...",
+  "enhanced_preview_image": "iVBORw0KGgo..."
+}
+```
 
 ```bash
 curl -X POST http://127.0.0.1:8000/preview/image \
