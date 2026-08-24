@@ -129,19 +129,23 @@ class PrintingService:
 
         return await to_thread.run_sync(prepare)
 
-    async def preview_image(self, data: bytes, *, caption: str | None = None) -> bytes:
+    async def preview_images(
+        self, data: bytes, *, caption: str | None = None
+    ) -> tuple[bytes, bytes]:
         image = await self.prepare_image(data, caption=caption)
 
-        def encode_png() -> bytes:
+        def encode_pngs() -> tuple[bytes, bytes]:
+            exact_output = io.BytesIO()
+            image.save(exact_output, format="PNG")
             preview = simulate_thermal_output(
                 image,
                 smoothing_radius=self.settings.printer_preview_smoothing_radius,
             )
-            output = io.BytesIO()
-            preview.save(output, format="PNG")
-            return output.getvalue()
+            enhanced_output = io.BytesIO()
+            preview.save(enhanced_output, format="PNG")
+            return exact_output.getvalue(), enhanced_output.getvalue()
 
-        return await to_thread.run_sync(encode_png)
+        return await to_thread.run_sync(encode_pngs)
 
     async def print_text(self, request: TextRequest) -> None:
         self._validate_text(request.text)

@@ -31,6 +31,11 @@ class PrintResponse(StrictModel):
     status: Literal["printed"] = "printed"
 
 
+class ImagePreviewResponse(StrictModel):
+    exact_print_image: str = Field(description="Base64-encoded monochrome print PNG.")
+    enhanced_preview_image: str = Field(description="Base64-encoded smoothed preview PNG.")
+
+
 class PrinterStatusResponse(StrictModel):
     configured: bool
     reachable: bool

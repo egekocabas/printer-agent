@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 
@@ -108,6 +109,38 @@ def test_image_preview_smooths_the_exact_raster_without_printing(
     assert preview.size == printed.size
     assert preview.tobytes() != printed.convert("L").tobytes()
     assert any(value not in {0, 255} for value in preview.get_flattened_data())
+
+
+def test_image_preview_can_return_exact_and_enhanced_images_as_json(
+    client: TestClient, mock_printer: MockPrinter
+) -> None:
+    image = image_bytes("JPEG", size=(240, 100))
+    upload = {"image": ("photo.jpg", image, "image/jpeg")}
+
+    response = client.post("/preview/image?response=json", files=upload)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert mock_printer.operations == []
+    result = response.json()
+    assert set(result) == {"exact_print_image", "enhanced_preview_image"}
+    exact = Image.open(
+        io.BytesIO(base64.b64decode(result["exact_print_image"], validate=True))
+    ).copy()
+    enhanced = Image.open(
+        io.BytesIO(base64.b64decode(result["enhanced_preview_image"], validate=True))
+    ).copy()
+
+    print_response = client.post("/print/image", files=upload)
+
+    assert print_response.status_code == 200
+    printed = mock_printer.operations[0].value
+    assert exact.mode == "1"
+    assert exact.size == printed.size
+    assert exact.tobytes() == printed.tobytes()
+    assert enhanced.mode == "L"
+    assert enhanced.size == exact.size
+    assert enhanced.tobytes() != exact.convert("L").tobytes()
 
 
 def test_image_preview_can_return_unsmoothed_raw_raster() -> None:
