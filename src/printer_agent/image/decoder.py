@@ -118,3 +118,40 @@ def decode_image(data: bytes, *, max_pixels: int) -> DecodedImage:
         extra={"image_format": detected_format, "image_dimensions": original_size},
     )
     return DecodedImage(normalized, detected_format, original_size)
+
+
+def decode_prepared_image(data: bytes, *, printable_width: int, max_pixels: int) -> Image.Image:
+    """Decode an already-prepared monochrome PNG without changing its pixels."""
+
+    if not data:
+        raise InvalidImageError("Uploaded image is empty")
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as opened:
+                if (opened.format or "").upper() != "PNG":
+                    raise UnsupportedImageFormatError("Prepared image must use PNG format")
+                width, height = opened.size
+                if width < 1 or height < 1 or width * height > max_pixels:
+                    raise ImageTooLargeError(f"Decoded image exceeds the {max_pixels} pixel limit")
+                if width > printable_width:
+                    raise InvalidImageError(
+                        f"Prepared image exceeds the {printable_width} dot printer width"
+                    )
+                if getattr(opened, "is_animated", False):
+                    raise InvalidImageError("Prepared image must contain one frame")
+                opened.load()
+                if opened.mode != "1":
+                    raise InvalidImageError("Prepared image must be a 1-bit monochrome PNG")
+                image = opened.copy()
+    except (UnsupportedImageFormatError, ImageTooLargeError, InvalidImageError):
+        raise
+    except Image.DecompressionBombError as exc:
+        raise ImageTooLargeError("Decoded image exceeds Pillow's safety limit") from exc
+    except Image.DecompressionBombWarning as exc:
+        raise ImageTooLargeError("Decoded image exceeds Pillow's safety limit") from exc
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, EOFError) as exc:
+        raise InvalidImageError("Uploaded data is not a valid, complete image") from exc
+
+    return image

@@ -125,6 +125,19 @@ async def print_image(
     return PrintResponse()
 
 
+@router.post("/print/prepared-image", response_model=PrintResponse, tags=["printing"])
+async def print_prepared_image(
+    image: Annotated[
+        UploadFile,
+        File(description="Exact 1-bit PNG returned by the image preview endpoint."),
+    ],
+    service: ServiceDependency,
+) -> PrintResponse:
+    data = await _read_limited_upload(image, service.settings.max_image_upload_bytes)
+    await service.print_prepared_image(data)
+    return PrintResponse()
+
+
 @router.post(
     "/preview/image",
     response_class=JSONResponse,
