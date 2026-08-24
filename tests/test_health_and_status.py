@@ -48,6 +48,7 @@ def test_openapi_documents_every_endpoint(client: TestClient) -> None:
         "/print/text",
         "/print/qr",
         "/print/image",
+        "/print/prepared-image",
         "/print/feed",
         "/print",
     }

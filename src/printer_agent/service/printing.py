@@ -24,6 +24,7 @@ from printer_agent.exceptions import InvalidPrintDocumentError
 from printer_agent.image import (
     add_caption,
     decode_image,
+    decode_prepared_image,
     prepare_for_thermal_print,
     simulate_thermal_output,
 )
@@ -177,6 +178,20 @@ class PrintingService:
         await self._run_serialized(
             lambda: self.printer.print_image(image),
             request_type="image",
+            final_feed_lines=self.settings.printer_image_final_feed_lines,
+        )
+
+    async def print_prepared_image(self, data: bytes) -> None:
+        image = await to_thread.run_sync(
+            lambda: decode_prepared_image(
+                data,
+                printable_width=self.settings.printer_dots_width,
+                max_pixels=self.settings.max_image_pixels,
+            )
+        )
+        await self._run_serialized(
+            lambda: self.printer.print_image(image),
+            request_type="prepared_image",
             final_feed_lines=self.settings.printer_image_final_feed_lines,
         )
 

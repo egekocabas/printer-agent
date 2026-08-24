@@ -143,6 +143,44 @@ def test_image_preview_can_return_exact_and_enhanced_images_as_json(
     assert enhanced.tobytes() != exact.convert("L").tobytes()
 
 
+def test_exact_preview_image_can_be_printed_without_reprocessing(
+    client: TestClient, mock_printer: MockPrinter
+) -> None:
+    preview_response = client.post(
+        "/preview/image?response=json",
+        data={"date": "27/02/2026", "time": "18:34"},
+        files={"image": ("photo.jpg", image_bytes("JPEG"), "image/jpeg")},
+    )
+    exact_png = base64.b64decode(preview_response.json()["exact_print_image"], validate=True)
+    expected = Image.open(io.BytesIO(exact_png)).copy()
+
+    response = client.post(
+        "/print/prepared-image",
+        files={"image": ("exact-print.png", exact_png, "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "printed"}
+    assert [operation.kind for operation in mock_printer.operations] == ["image", "feed"]
+    printed = mock_printer.operations[0].value
+    assert printed.mode == "1"
+    assert printed.size == expected.size
+    assert printed.tobytes() == expected.tobytes()
+
+
+def test_prepared_image_endpoint_rejects_images_that_require_processing(
+    client: TestClient, mock_printer: MockPrinter
+) -> None:
+    response = client.post(
+        "/print/prepared-image",
+        files={"image": ("photo.png", image_bytes("PNG"), "image/png")},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Prepared image must be a 1-bit monochrome PNG"}
+    assert mock_printer.operations == []
+
+
 def test_image_preview_can_return_unsmoothed_raw_raster() -> None:
     settings = Settings(printer_preview_smoothing_radius=0, _env_file=None)
     printer = MockPrinter()

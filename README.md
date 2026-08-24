@@ -107,6 +107,7 @@ The interactive OpenAPI UI is at <http://127.0.0.1:8000/docs>.
 | `POST` | `/print/text` | Print styled plain text |
 | `POST` | `/print/qr` | Print a QR code and optional label |
 | `POST` | `/print/image` | Upload and print one image as `multipart/form-data` |
+| `POST` | `/print/prepared-image` | Print an exact image returned by the preview endpoint |
 | `POST` | `/preview/image` | Preview the exact print image and its screen-friendly enhancement |
 | `POST` | `/print/feed` | Advance the paper by an exact number of blank lines |
 | `POST` | `/print` | Print one atomic structured document |
@@ -248,6 +249,15 @@ Base64-encoded PNG strings:
   "exact_print_image": "iVBORw0KGgo...",
   "enhanced_preview_image": "iVBORw0KGgo..."
 }
+```
+
+Base64-decode `exact_print_image` and upload the resulting PNG to `/print/prepared-image` to print
+the approved image without applying image preparation a second time. This endpoint only accepts a
+single-frame, 1-bit monochrome PNG that fits the configured printer width.
+
+```bash
+curl -X POST http://127.0.0.1:8000/print/prepared-image \
+  -F 'image=@exact-print.png'
 ```
 
 ```bash
