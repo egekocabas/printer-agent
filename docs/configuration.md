@@ -48,7 +48,8 @@ PRINTER_MODEL_NAME=ANJET58
 
 The IDs above are placeholders. Do not use them without checking the physical device. Decimal and
 `0x` hexadecimal values are accepted. The USB backend retains a healthy connection, reconnects
-after a communication failure, and retries the failed operation once.
+after a communication failure, and retries the failed operation once. The IN endpoint must be the
+printer's bidirectional bulk endpoint for real-time status responses.
 
 Start the configured service with:
 
@@ -56,8 +57,10 @@ Start the configured service with:
 uvicorn printer_agent.main:app
 ```
 
-Detailed paper and error status is reported as `null` when the printer cannot provide it reliably
-through generic ESC/POS commands.
+The status endpoint queries the generic ESC/POS `DLE EOT 1` through `DLE EOT 4` responses. Valid
+responses are normalized to `ready`, `paper_out`, `error`, or `unknown`; status remains `null` when
+the printer ignores the query, times out, or returns invalid bytes. Sensors differ by model, so the
+service intentionally does not infer model-specific states such as `cover_open`.
 
 ## Environment variables
 

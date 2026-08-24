@@ -260,7 +260,8 @@ class PrintingService:
         )
 
     async def get_status(self) -> PrinterStatus:
-        return await to_thread.run_sync(self.printer.get_status)
+        async with self._print_lock:
+            return await to_thread.run_sync(self.printer.get_status)
 
     async def close(self) -> None:
         await to_thread.run_sync(self.printer.close)
