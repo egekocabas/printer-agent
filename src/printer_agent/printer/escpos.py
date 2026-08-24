@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from PIL.Image import Image
+from usb.core import USBTimeoutError  # type: ignore[import-untyped]
 
 from printer_agent.api.models import Align, TextSize
 from printer_agent.config import Settings
@@ -13,9 +14,18 @@ from printer_agent.exceptions import (
     PrinterConfigurationError,
     PrinterUnavailableError,
 )
-from printer_agent.printer.base import Printer, PrinterStatus
+from printer_agent.printer.base import HardwareStatus, Printer, PrinterStatus
 
 logger = logging.getLogger(__name__)
+
+_REALTIME_STATUS_COMMAND = b"\x10\x04"
+_REALTIME_STATUS_PARAMETERS = range(1, 5)
+_STATUS_FIXED_BITS_MASK = 0x93
+_STATUS_FIXED_BITS_VALUE = 0x12
+
+
+class _UnsupportedRealtimeStatusError(Exception):
+    """A connected printer did not return a valid ESC/POS status byte."""
 
 
 class EscPosPrinter(Printer):
@@ -122,26 +132,77 @@ class EscPosPrinter(Printer):
     def feed(self, lines: int = 1) -> None:
         self._execute(lambda device: device.print_and_feed(lines))
 
-    def get_status(self) -> PrinterStatus:
-        try:
-            self._connect()
-        except PrinterUnavailableError as exc:
-            return PrinterStatus(
-                configured=True,
-                reachable=False,
-                backend="usb",
-                model=self._model,
-                hardware_status=None,
-                detail=str(exc),
-            )
+    @staticmethod
+    def _normalize_hardware_status(statuses: dict[int, int]) -> HardwareStatus:
+        printer_status = statuses[1]
+        offline_status = statuses[2]
+        error_status = statuses[3]
+        paper_status = statuses[4]
+
+        if offline_status & 0x20 or paper_status & 0x60 == 0x60:
+            return HardwareStatus.PAPER_OUT
+        if offline_status & 0x40 or error_status & 0x6C:
+            return HardwareStatus.ERROR
+        if printer_status & 0x08 or offline_status & 0x04:
+            return HardwareStatus.UNKNOWN
+        return HardwareStatus.READY
+
+    def _query_hardware_status(self, device: Any) -> HardwareStatus:
+        statuses: dict[int, int] = {}
+        for parameter in _REALTIME_STATUS_PARAMETERS:
+            device._raw(_REALTIME_STATUS_COMMAND + bytes((parameter,)))
+            response = device._read()
+            if not response:
+                raise _UnsupportedRealtimeStatusError("Printer returned an empty status response")
+            value = int(response[0])
+            if value & _STATUS_FIXED_BITS_MASK != _STATUS_FIXED_BITS_VALUE:
+                raise _UnsupportedRealtimeStatusError(
+                    f"Printer returned an invalid status byte: 0x{value:02x}"
+                )
+            statuses[parameter] = value
+        return self._normalize_hardware_status(statuses)
+
+    def _unreachable_status(self, detail: str) -> PrinterStatus:
         return PrinterStatus(
             configured=True,
-            reachable=True,
+            reachable=False,
             backend="usb",
             model=self._model,
             hardware_status=None,
-            detail="Connection opened; detailed hardware status is not queried reliably",
+            detail=detail,
         )
+
+    def get_status(self) -> PrinterStatus:
+        for attempt in range(2):
+            try:
+                hardware_status = self._query_hardware_status(self._connect())
+            except PrinterUnavailableError as exc:
+                return self._unreachable_status(str(exc))
+            except (USBTimeoutError, _UnsupportedRealtimeStatusError):
+                return PrinterStatus(
+                    configured=True,
+                    reachable=True,
+                    backend="usb",
+                    model=self._model,
+                    hardware_status=None,
+                    detail="Connected; real-time ESC/POS status is unavailable",
+                )
+            except Exception:
+                self._disconnect_after_failure()
+                if attempt == 0:
+                    logger.warning("ESC/POS status query failed; reconnecting", exc_info=True)
+                    continue
+                logger.error("ESC/POS status query failed after reconnect", exc_info=True)
+                return self._unreachable_status("Printer communication failed")
+            return PrinterStatus(
+                configured=True,
+                reachable=True,
+                backend="usb",
+                model=self._model,
+                hardware_status=hardware_status,
+                detail=None,
+            )
+        return self._unreachable_status("Printer communication failed")
 
     def close(self) -> None:
         device, self._device = self._device, None

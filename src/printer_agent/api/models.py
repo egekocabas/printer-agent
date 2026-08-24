@@ -41,9 +41,12 @@ class PrinterStatusResponse(StrictModel):
     reachable: bool
     backend: str
     model: str | None
-    hardware_status: str | None = Field(
+    hardware_status: Literal["ready", "paper_out", "error", "unknown"] | None = Field(
         default=None,
-        description="Device-reported hardware status, null when not reliably available.",
+        description=(
+            "Normalized device status: ready, paper_out, error, unknown, or null when the "
+            "printer does not support reliable real-time status."
+        ),
     )
     detail: str | None = Field(
         default=None,

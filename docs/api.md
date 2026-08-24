@@ -30,8 +30,27 @@ curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/printer/status
 ```
 
-`/printer/status` reports whether the backend is configured and reachable. `hardware_status` is
-`null` when the device does not expose a reliable generic ESC/POS status.
+`/printer/status` actively checks whether the backend is reachable. USB printers that implement
+the standard ESC/POS `DLE EOT` replies also return one conservative normalized
+`hardware_status`: `ready`, `paper_out`, `error`, or `unknown`. The value is `null` when the
+connected printer does not provide a valid real-time response.
+
+```json
+{
+  "configured": true,
+  "reachable": true,
+  "backend": "usb",
+  "model": "ANJET58",
+  "hardware_status": "ready",
+  "detail": null
+}
+```
+
+`unknown` means the printer reports an offline condition that is not portable enough to name. For
+example, some models expose a dedicated cover-open bit while others report the same physical state
+as paper-out. The API deliberately does not guess model-specific causes. A communication failure
+invalidates the cached USB connection, retries once, and reports `reachable: false` if the printer
+cannot be reopened.
 
 `/metrics` is deliberately omitted from OpenAPI. It exposes bounded-label Prometheus metrics for
 job outcomes, duration, queue wait, queue depth, active work, and the last successful print.

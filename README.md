@@ -13,7 +13,7 @@ target is an ANJET58 58 mm USB printer, but the API and image pipeline are not t
 - JPEG, MPO, PNG, WebP, HEIC/HEIF, and AVIF image processing
 - Exact print-image previews before a job reaches the printer
 - USB and in-memory mock backends
-- Prometheus metrics and printer reachability checks
+- Prometheus metrics plus printer reachability and generic ESC/POS hardware-status checks
 
 ## Quick start
 

@@ -1,13 +1,15 @@
 import asyncio
 import json
 import time
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
 
-from printer_agent.api.models import PrintDocument
+from printer_agent.api.models import PrintDocument, TextRequest
 from printer_agent.config import Settings
 from printer_agent.exceptions import PrinterUnavailableError
+from printer_agent.printer.base import PrinterStatus
 from printer_agent.printer.mock import MockPrinter
 from printer_agent.service.printing import PrintingService
 from tests.image_helpers import image_bytes
@@ -101,3 +103,41 @@ async def test_failed_job_releases_serialization_lock() -> None:
     assert [operation.value for operation in printer.operations if operation.kind == "text"] == [
         "works"
     ]
+
+
+class StatusDuringPrintMockPrinter(MockPrinter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.print_started = Event()
+        self.release_print = Event()
+        self.print_in_progress = False
+        self.status_overlapped_print = False
+
+    def print_text(self, *args: object, **kwargs: object) -> None:
+        self.print_in_progress = True
+        self.print_started.set()
+        self.release_print.wait(timeout=1)
+        try:
+            super().print_text(*args, **kwargs)  # type: ignore[arg-type]
+        finally:
+            self.print_in_progress = False
+
+    def get_status(self) -> PrinterStatus:
+        self.status_overlapped_print = self.print_in_progress
+        return super().get_status()
+
+
+@pytest.mark.asyncio
+async def test_status_query_cannot_interleave_with_print_job() -> None:
+    printer = StatusDuringPrintMockPrinter()
+    service = PrintingService(printer, Settings(_env_file=None, printer_final_feed_lines=0))
+
+    print_task = asyncio.create_task(service.print_text(TextRequest(text="printing")))
+    assert await asyncio.to_thread(printer.print_started.wait, 1)
+    status_task = asyncio.create_task(service.get_status())
+    await asyncio.sleep(0.01)
+
+    assert status_task.done() is False
+    printer.release_print.set()
+    await asyncio.gather(print_task, status_task)
+    assert printer.status_overlapped_print is False

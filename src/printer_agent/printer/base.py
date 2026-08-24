@@ -2,10 +2,18 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 
 from PIL.Image import Image
 
 from printer_agent.api.models import Align, TextSize
+
+
+class HardwareStatus(StrEnum):
+    READY = "ready"
+    PAPER_OUT = "paper_out"
+    ERROR = "error"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,7 +22,7 @@ class PrinterStatus:
     reachable: bool
     backend: str
     model: str | None = None
-    hardware_status: str | None = None
+    hardware_status: HardwareStatus | None = None
     detail: str | None = None
 
 
